@@ -1,0 +1,213 @@
+//Уменьшить яркость зелёной составляющей нижней половины картинки
+//Увеличить яркость зелёной составляющей картинки у правой стороны картинки
+#include <iostream>
+#include <ctime>
+
+clock_t CPP_(unsigned char* buffer, unsigned width, unsigned height) 
+{
+	clock_t time;
+	time = clock();
+	short val;
+	unsigned char dif;
+	unsigned half = height / 2;
+	unsigned int y;
+	dif = 0;
+	for (int j = half; j >= 0; j--) {
+		y = (j * width) * 4 + 1;
+		for (unsigned int i = 0; i < width; y = y + 4, i++) {
+			if ((val = (short)buffer[y] - (short)dif) < 0)
+				val = 0;
+			buffer[y] = val;
+			//buffer[(j * width) * 4 + 0] = 0;//B
+			buffer[(j * width) * 4 + 1] = 0;//G
+			//buffer[(j * width) * 4 + 2] = 0;//R
+			//buffer[(j * width) * 4 + 3] = 0;//X
+		}
+		if (dif != 255)
+			dif++;
+	}
+	time = clock() - time;
+	return time;
+}
+
+clock_t Cx86(unsigned char* buffer, unsigned width, unsigned height) 
+{
+	clock_t time;
+	time = clock();
+	_asm {
+		mov edi, dword ptr[buffer] // edi = buffer
+		mov ecx, dword ptr[height] // ecx = height
+		shr ecx, 1
+		mov esi, dword ptr[width] // esi = width
+		mov bh, 0
+		//j = ecx = height/2
+		jmp j_firstpass
+		for_j :
+			dec ecx
+		j_firstpass :
+			mov eax, ecx //ecx to eax
+			cmp eax, 0
+			jl j_end //If j<0 j_end
+			imul eax, esi // j*width
+			shl eax, 2 // y = j*width*4
+			add eax, edi // eax = buffer + y
+			add eax, 1 // eax = buffer + y + 1
+			mov edx, 0 //i = edx = 0
+			jmp i_firstpass
+		for_i :
+			inc edx
+			add eax, 4
+		i_firstpass :
+			cmp edx, esi //i>?<width
+			jae i_end //if(i>=width) -> i_end
+			mov bl, byte ptr[eax]
+			sub bl, bh
+			jnc not_saturated
+			mov bl, 0
+		not_saturated:
+			mov byte ptr[eax], bl
+			jmp for_i
+		i_end :
+			cmp bh, 0xFF//if (dif != 255)
+			je for_j
+			inc bh //dif++
+			jmp for_j
+		j_end :
+	}
+	time = clock() - time;
+	return time;
+}
+
+clock_t CmmX(unsigned char* buffer, unsigned width, unsigned height) 
+{
+	clock_t time;
+	const char* address = "%p\n";
+	time = clock();
+	_asm {
+		mov ebx, 0x00010001
+		movd mm3, ebx
+		mov ebx, 0x00000000
+		movd mm0, ebx
+		punpcklbw mm0, mm3
+		pxor mm1, mm1
+		mov edi, dword ptr[buffer] // edi = buffer
+		mov ecx, dword ptr[height] // ecx = height
+		shr ecx, 1
+		mov esi, dword ptr[width] // esi = width
+		jmp j_firstpass
+		for_j :
+			dec ecx
+		j_firstpass :
+			mov eax, ecx
+			cmp eax, 0
+			jl j_end
+			imul eax, esi // j*width
+			shl eax, 2 // y = j*width*4
+			add eax, edi // eax = buffer + y
+			mov edx, 0 //i = edx = 0
+			jmp i_firstpass
+		for_i :
+			add edx, 2
+			add eax, 8
+		i_firstpass :
+			cmp edx, esi //i>?<width
+			jae i_end //if(i>=width) -> i_end
+			movq mm2, [eax]
+			psubusb mm2, mm1
+			movq[eax], mm2
+			jmp for_i
+		i_end :
+			paddusb mm1, mm0
+			jmp for_j
+		j_end :
+			emms //mmX
+	}
+	time = clock() - time;
+	return time;
+}
+
+void SafeOpen(FILE*& f, const char* name, const char* mode) 
+{
+	fopen_s(&f, name, mode);
+	if (f == NULL) {
+		printf("Error: Can't open %s with mode %s\n", name, mode);
+		exit(-2);
+	}
+}
+
+unsigned char* ReadFile(const char* name, unsigned char* header) 
+{
+	FILE* in;
+	unsigned char* buffer;
+	unsigned int width, height;
+	SafeOpen(in, name, "rb");
+	fread(header, 1, 54, in);
+	width = *(unsigned int*)(header + 18);
+	height = *(unsigned int*)(header + 22);
+	buffer = (unsigned char*)malloc(width * height * 4);
+	fread(buffer, 1, width * height * 4, in);
+	fclose(in);
+	printf("width = %d\nheight = %d\n", width, height);
+	return buffer;
+}
+
+void SaveFile(const char* name, unsigned char* header, unsigned char* buffer, unsigned int len) 
+{
+	FILE* out;
+	SafeOpen(out, name, "wb");
+	fwrite(header, 1, 54, out);
+	fwrite(buffer, 1, len, out);
+	fclose(out);
+}
+
+int main()
+{
+	setlocale(LC_ALL, "Rus");
+	clock_t x86 = 0, mmX = 0, CPP = 0;
+	double time1, time2, time3;
+	int times = 100;
+
+	unsigned char* buffer_original, *bufferCPP;
+	unsigned int width, height, len;
+	unsigned char headers[54];
+	buffer_original = ReadFile("X://twilight.bmp", headers);
+	width = *(unsigned int*)(headers + 18);
+	height = *(unsigned int*)(headers + 22);
+
+	len = width * height * 4;
+	bufferCPP = (unsigned char*)malloc(len);
+	for (int i = 0; i < times; i++) {
+		memcpy(bufferCPP, buffer_original, len); //Функция memcpy копирует num байтов первого блока памяти,
+												 //на который ссылается указатель srcptr, во второй блок памяти, на который ссылается указатель destptr.
+		CPP += CPP_(bufferCPP, width, height);
+
+		memcpy(bufferCPP, buffer_original, len);
+		x86 += Cx86(bufferCPP, width, height);
+
+		memcpy(bufferCPP, buffer_original, len);
+		mmX += CmmX(bufferCPP, width, height);
+	}
+
+	time1 = ((double)CPP / CLOCKS_PER_SEC) / times;//avg atempts
+	time2 = ((double)x86 / CLOCKS_PER_SEC) / times;
+	time3 = ((double)mmX / CLOCKS_PER_SEC) / times;
+
+	printf("\nСреднее за %d раз(-а):\nC++:%lfс ASMx86:%lfс mmX:%lfс\n", times, time1, time2, time3);
+
+	memcpy(bufferCPP, buffer_original, len);
+	CmmX(bufferCPP, width, height);
+	SaveFile("X://outCmmX.bmp", headers, bufferCPP, len);
+
+	memcpy(bufferCPP, buffer_original, len);
+	CPP_(bufferCPP, width, height);
+	SaveFile("X://outCPP.bmp", headers, bufferCPP, len);
+
+	memcpy(bufferCPP, buffer_original, len);
+	Cx86(bufferCPP, width, height);
+	SaveFile("X://outCx86.bmp", headers, bufferCPP, len);
+
+	//free memory
+	free(bufferCPP);
+	free(buffer_original);
+	return 0;
+}

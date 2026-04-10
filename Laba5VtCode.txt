@@ -1,0 +1,109 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+using namespace std; 
+
+int main() {
+    FILE* in, * out;
+    unsigned char* buffer;
+    int width, height;
+    int X = 0;
+    int Y = 0;
+    int Even = 2;
+    int Sum = 0;
+    int bytesPerPixel = 3;
+
+    if (fopen_s(&in, "C:\\Users\\qshes\\Desktop\\Laba5VT\\penguin.bmp", "rb") != 0) {
+        printf("Error: Can't open penguin.bmp for reading\n");
+        return 0;
+    }
+
+    buffer = (unsigned char*)malloc(54);
+    fread(buffer, 1, 54, in);
+
+    width = *(int*)&buffer[18];
+    height = *(int*)&buffer[22];
+
+    printf("Width = %d\n", width);
+    printf("Height = %d\n", height);
+
+    if (fopen_s(&out, "C:\\Users\\qshes\\Desktop\\Laba5VT\\54.bmp", "wb") != 0) {
+        printf("Error: Can't open file out.bmp for writing\n");
+        fclose(in);
+        free(buffer);
+        return 0;
+    }
+
+    *(int*)&buffer[18] = width;
+    *(int*)&buffer[22] = height;
+    *(int*)&buffer[2] = 54 + width * height * bytesPerPixel;
+
+    fwrite(buffer, 1, 54, out);
+    free(buffer);
+
+    buffer = (unsigned char*)malloc(width * height * bytesPerPixel);
+    fread(buffer, 1, width * height * bytesPerPixel, in);
+    fclose(in);
+
+    __asm {
+        
+        LoopForStart:   mov eax, height
+                        mov edx, X
+                        cmp edx, eax
+                        jle LoopForEven
+                        jmp End
+
+        
+        LoopForEven :   mov eax, X
+                        cdq            
+                        div Even
+                        cmp edx, 0
+                        je IncressValue
+                        mov edx, X
+                        add edx, 1
+                        mov X, edx
+                        jmp LoopForStart
+     
+                     
+         IncressValue : mov eax, width
+                        mov edx, Y
+                        cmp edx, eax
+                        jle LoopForLight
+                        jmp LoopForStart
+                    
+                        LoopForLight: 
+                    // Увеличить яркость X строка, Y столбец
+                        mov edx, Y
+                        add edx, 1
+                        mov Y, edx
+                        jmp LoopForIncressValue
+
+                        /*mov eax, Sum
+                        add eax, 1
+                        mov Sum, eax */ //Вычисляем кол-во четных строк
+                        mov edx, X
+                        add edx, 1
+                        mov X, edx
+                        jmp LoopForStart
+
+
+    End:
+
+
+
+
+
+
+
+        
+    }
+  
+    printf("%d", Sum);
+
+    fwrite(buffer, 1, width * height * bytesPerPixel, out);
+    fclose(out);
+    free(buffer);
+
+
+    return 0;
+}

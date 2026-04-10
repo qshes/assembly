@@ -1,0 +1,47 @@
+mov edi, dword ptr[buffer] // edi = buffer
+		mov ecx, dword ptr[height] // ecx = height
+		sub ecx, 2
+		mov esi, dword ptr[width] // esi = width
+		mov bh, 0
+		jmp j_firstpass
+		for_j :
+		sub ecx, 2
+			j_firstpass :
+			mov eax, ecx
+			cmp eax, 0
+			jl j_end //If j<0 j_end
+			imul eax, ecx // j*width
+			//imul eax, 4
+			shl eax, 2 // y = j*width*4
+			add eax, edi // eax = buffer + y
+			add eax, 1 // eax = buffer + y + 1
+			mov edx, 0 //i = edx = 0
+			jmp i_firstpass
+			for_i :
+		inc edx
+			add eax, 4
+			i_firstpass :
+			cmp edx, esi //i>?<width
+			jae i_end //if(i>=width) -> i_end
+			mov bl, byte ptr[eax]
+			sub bl, bh
+			jnc not_saturated
+			mov bl, 0
+			not_saturated:
+		mov byte ptr[eax], bl
+			mov eax, ecx
+			imul eax, ecx
+			imul eax, 4
+			//shl eax, 2
+			add eax, edi
+			add eax, edx
+			add byte ptr[eax], 40
+			add byte ptr[eax + 1], 40
+			jmp for_i
+			i_end :
+		cmp bh, 0xFF//if (dif != 255)
+			je for_j
+			inc bh
+			mov edx, 0
+			jmp for_j
+			j_end: 
